@@ -1,0 +1,12 @@
+{
+    "resources directory" : "~/Dropbox/DropConfig",
+    "dropconfig directory" : "~/.dropconfig",
+
+    "terminal text color codes" : {
+        "success text" : "\\e[0;32m",
+        "info text" : "\\e[0;33m",
+        "error text" : "\\e[0;31m",
+        "path text" : "\\e[0;36m",
+        "default text" : "\\e[00m"
+    }
+}
