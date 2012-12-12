@@ -19,7 +19,6 @@ class Filesystem:
     # Mapping resources in backup -> directory in backup directory containing resource
     _backup_index = dict()
 
-
     """
     Instantiates a Filesystem object to handle Unbox's file operations
     - RETURNS: 
@@ -68,6 +67,8 @@ class Filesystem:
         return os.path.abspath(os.path.expanduser(os.path.normpath(path)))
 
 
+
+
     """ ========== Validation Functions =========== """
     """
     Ensures the given local Unbox directory has all the necessary directories
@@ -103,7 +104,7 @@ class Filesystem:
     """
     Gets the list of backed-up files
     """
-    def get_backup_list(self):
+    def backup_list(self):
         return self._backup_index.keys()
 
     """
@@ -124,15 +125,42 @@ class Filesystem:
         os.mkdir(dest_path)
         shutil.move(path, dest_path)
 
-        # Tracks the file with the backup index
+        # Register the addition in the backup index
         self._backup_index[path] = dest_dir
+        self._write_backup_index()
+
+    """
+    Retrieves the file/diretory tree from the backup system
+    - path: local path to retrieve
+    """
+    def restore_backup(self, path):
+        # Check validity
+        path = Filesystem.abs_path(path)
+        if not self.has_backup(path):
+            raise ValueError("Cannot restore path from backup; path does not exist")
+
+        # Restore backed-up resource into original location
+        resource_filename = os.path.basename(path)
+        BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
+        saved_loc_dirpath = os.path.join(BACKUP_DIRPATH, self._backup_index[path]) 
+        saved_loc_filepath = os.path.join(saved_loc_dirpath, resource_filename)
+        shutil.move(saved_loc_filepath, path)
+        os.rmdir(saved_loc_dirpath)
+
+        # Register the removal in the backup index 
+        del(self._backup_index[path])
+        self._write_backup_index()
+
+    """
+    Writes the in-memory backup index to the backup index file
+    """
+    def _write_backup_index(self):
+        BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
         BACKUP_INDEX_FILEPATH = os.path.join(BACKUP_DIRPATH, self._BACKUP_INDEX_FILENAME)
         backup_index_fp = open(BACKUP_INDEX_FILEPATH, "w")
         json.dump(self._backup_index, backup_index_fp)
         backup_index_fp.close()
 
-    """
-    Retrieves the file/diretory tree from the backup system
-    """
-    def restore_backup(self, path):
-        print "Nothing here yet!"
+
+        
+
