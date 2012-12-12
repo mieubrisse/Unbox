@@ -4,8 +4,6 @@ import sys
 import os
 import shutil
 
-import dropconfig_aux
-
 """
 Main processing engine for the script
 """
@@ -13,11 +11,11 @@ class Core:
 
     """ ====== Constants ======== """
     # Names of files detailing reosurce link behaviors
-    LINK_FILENAME = ".dropconfig_link"
-    IGNORED_FILENAME = ".dropconfig_ignore"
+    LINK_FILENAME = ".unbox_link"
+    IGNORED_FILENAME = ".unbox_ignore"
 
     # Suffix attached to backup files
-    BACKUP_SUFFIX = ".dropconfig_bak"
+    BACKUP_SUFFIX = ".unbox_bak"
 
     
 
@@ -27,12 +25,16 @@ class Core:
     remote_resource_dir_path = ""
 
     # Dropconfig file on local machine
-    dropconfig_dir_path = ""
+    unbox_dir_path = ""
     
     # List of remote resource paths
     remote_resources = None
 
-    # Mapping of installed resources (resource path : link path)
+    # Information about items in Dropbox
+
+    dropbox_info
+
+    # Mapping of installed resources (resource path : {)
     resource_link_dict = None
     
     # List of ignored resource paths
@@ -48,7 +50,7 @@ class Core:
     """ ====== Functions ======== """
     """
     Constructor method
-     - config_fp: filepointer to the DropConfig config file
+     - config_fp: filepointer to the Unbox config file
      - script_args: arguments passed to the script
     """
     def __init__(self, config_fp):
@@ -57,23 +59,24 @@ class Core:
         # Ensure valid resource directory was specified
         self.remote_resource_dir_path = os.path.expanduser(os.path.normpath(config_obj["resources directory"]))
 
-        # Ensure valid dropship directory was specified
-        self.dropconfig_dir_path = os.path.expanduser(os.path.normpath(config_obj["dropconfig directory"]))
-        if not os.path.exists(self.dropconfig_dir_path):
-            os.makedirs(self.dropconfig_dir_path)
-        if os.path.exists(self.dropconfig_dir_path) and not os.path.isdir(self.dropconfig_dir_path):
-            raise Exception(self.dropconfig_dir_path + " exists but isn't a directory")
+        # Ensure valid unbox directory was specified
+        self.unbox_dir_path = os.path.expanduser(os.path.normpath(config_obj["unbox directory"]))
+        if not os.path.exists(self.unbox_dir_path):
+            os.makedirs(self.unbox_dir_path)
+        if os.path.exists(self.unbox_dir_path) and not os.path.isdir(self.unbox_dir_path):
+            raise Exception(self.unbox_dir_path + " exists but isn't a directory")
 
         # Load rules from files detailing what links should be made
-        resource_link_dict_filepath = os.path.join(self.dropconfig_dir_path, self.LINK_FILENAME)
+        resource_link_dict_filepath = os.path.join(self.unbox_dir_path, self.LINK_FILENAME)
         if os.path.exists(resource_link_dict_filepath):
             resource_link_dict_file = open(resource_link_dict_filepath, 'r+')
             self.resource_link_dict = json.load(resource_link_dict_file)
             resource_link_dict_file.close()
         else:
             self.resource_link_dict = dict()
-
-        ignored_resources_filepath = os.path.join(self.dropconfig_dir_path, self.IGNORED_FILENAME)
+        
+        # Load which resources should be ignored
+        ignored_resources_filepath = os.path.join(self.unbox_dir_path, self.IGNORED_FILENAME)
         if os.path.exists(ignored_resources_filepath):
             ignored_resources_file = open(ignored_resources_filepath, 'r+')
             self.ignored_resources = json.load(ignored_resources_file)
@@ -94,7 +97,7 @@ class Core:
     If possible, creates the desired links
      - links_to_create: mapping of (resource path : link path) that user wants to create
     """
-    def forgeLinks(self, links_to_create):
+    def forge_links(self, links_to_create):
         for resource_path in links_to_create.keys():
             resource_path = resource_path.strip()
 
@@ -113,6 +116,12 @@ class Core:
             if len(link_path.strip()) == 0:
                 print "-- Skipping empty link path"
                 continue
+
+            # If a link exists at the link path, remove it
+            if os.path.islink(full_link_path):
+                os.remove(full_link_path)
+
+            # If a file exists at the link path, back it up
             if os.path.exists(full_link_path):
                 print "-- " + full_link_path + " already exists; appending " + self.BACKUP_SUFFIX
                 os.rename(full_link_path, full_link_path + self.BACKUP_SUFFIX)
@@ -124,13 +133,13 @@ class Core:
     """
     Cleans the in-memory lists to remove references to resources that no longer exist
     """
-    def cleanLists(self):
+    def clean_lists(self):
         # Remove dead resources and restore from backup if possible
         dead_link_resources = [resource for resource in self.resource_link_dict.keys() if resource not in self.remote_resources]
-        self.removeLinks(dead_link_resources)
+        self.remove_links(dead_link_resources)
 
         dead_ignored_resources = [resource for resource in self.ignored_resources if resource not in self.remote_resources]
-        self.ignored_resources = dropconfig_aux.filterList(self.ignored_resources, dead_ignored_resources)
+        self.ignored_resources = list(set(self.ignored_resources) - set(dead_ignored_resources))
         # for dead_ignored_resource in dead_ignored_resources:
         #     self.ignored_resources.remove(dead_ignored_resource)
 
@@ -138,7 +147,7 @@ class Core:
     Removes links for the given resources and attempts to restore the backup saved when the link was created
      - resources: list of paths to resources to remove
     """
-    def removeLinks(self, resources):
+    def remove_links(self, resources):
         for resource_to_remove in resources:
             link_path = self.resource_link_dict[resource_to_remove]
             if not os.path.exists(link_path):
@@ -166,13 +175,15 @@ class Core:
     """
     Helper function to write the in-memory lists to file
     """
-    def writeLists(self):
-        resource_link_dict_filepath = os.path.join(self.dropconfig_dir_path, self.LINK_FILENAME)
+    def write_lists(self):
+
+        # Write list of resources
+        resource_link_dict_filepath = os.path.join(self.unbox_dir_path, self.LINK_FILENAME)
         resource_link_dict_file = open(resource_link_dict_filepath, 'w')
         json.dump(self.resource_link_dict, resource_link_dict_file)
         resource_link_dict_file.close()
 
-        ignored_resources_filepath = os.path.join(self.dropconfig_dir_path, self.IGNORED_FILENAME)
+        ignored_resources_filepath = os.path.join(self.unbox_dir_path, self.IGNORED_FILENAME)
         ignored_resources_file = open (ignored_resources_filepath, 'w')
         json.dump(self.ignored_resources, ignored_resources_file)
         ignored_resources_file.close()

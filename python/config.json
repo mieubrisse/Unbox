@@ -1,6 +1,6 @@
 {
-    "resources directory" : "~/Dropbox/DropConfig",
-    "dropconfig directory" : "~/.dropconfig",
+    "resources directory" : "~/Dropbox/Unbox",
+    "unbox directory" : "~/.unbox",
 
     "terminal text color codes" : {
         "success text" : "\\e[0;32m",

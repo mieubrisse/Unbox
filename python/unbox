@@ -6,18 +6,15 @@ import os.path
 import tempfile
 import json
 import subprocess
-
-
-
-
 import time
+import optparse
 
 # Import custom libraries
-import dropconfig_core
+import unbox_core
 
-if not len(sys.argv) > 1:
-    print "Enter 'dropconfig help' for usage help"
-    sys.exit()
+
+
+""" ======== MAIN ======== """
 
 # Ensure config exists
 try:
@@ -26,31 +23,51 @@ except IOError:
     print("Unable to find 'config.json'")
     sys.exit()
 
+# Load state of application
 config_file = open("config.json")
-core = dropconfig_core.Core(config_file)
-core.cleanLists()
-if sys.argv[1] == "fresh":
+core = unbox_core.Core(config_file)
+core.clean_lists()
+
+# Parse user arguments
+#parser = OptionParser()
+#parser.add_option("-f", "--fresh", help="configure Unbox from scratch"
+command_arg = sys.argv[1]
+
+
+# Perform fresh install
+if command_arg == "fresh":
+    
     resource_link_dict = core.resource_link_dict
-    core.removeLinks(resource_link_dict.keys())
+    core.remove_links(resource_link_dict.keys())
     core.ignored_resources = []
     remote_resources = core.remote_resources
     
-    # Get user input on where to map which resources
+    # Write out resources in Dropbox folder in temp file
     json_obj = dict.fromkeys(remote_resources, " ")
     tempfile = tempfile.NamedTemporaryFile(delete=False)
     json.dump(json_obj, tempfile, indent=4, separators=(",", "\t:\t"))
     tempfile.flush()
+
+    # Open editor to let user set what should be installed
     editor = os.environ.get("EDITOR", "vim")
     return_code = subprocess.call([editor, tempfile.name]) 
     tempfile.seek(0)
     desired_links = json.load(tempfile)
     tempfile.close()
+
+    # Process user's decisions
     resources_to_ignore = [resource for resource in desired_links.keys() if resource not in remote_resources]
     core.ignored_resources.append(resources_to_ignore)
-    core.forgeLinks(desired_links)
+    core.forge_links(desired_links)
+# Print help
+elif command_arg == "help":
+    printHelp()
+else:
+    usage()
+
     
 
-core.writeLists()
+core.write_lists()
     # remove any existing links
     # clear the ignore list
     # gather all resources
