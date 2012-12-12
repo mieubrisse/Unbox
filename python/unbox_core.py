@@ -4,35 +4,32 @@ import sys
 import os
 import shutil
 
+import unbox_config
+import unbox_filesystem
+
 """
 Main processing engine for the script
 """
 class Core:
-
-    """ ====== Constants ======== """
-    # Names of files detailing reosurce link behaviors
-    LINK_FILENAME = ".unbox_link"
-    IGNORED_FILENAME = ".unbox_ignore"
-
-    # Suffix attached to backup files
-    BACKUP_SUFFIX = ".unbox_bak"
-
-    
-
-
     """ ====== Variables ======== """
-    # Path to config files in Dropbox
-    remote_resource_dir_path = ""
-
-    # Dropconfig file on local machine
-    unbox_dir_path = ""
-    
-    # List of remote resource paths
-    remote_resources = None
 
     # Information about items in Dropbox
+    # resource name : dict of info{
+    #       versions : dict of version info{
+    #           version number : list of dependencies
+    #       }
+    #       isFile : boolean indicating if file or directory
+    # } 
+    dropbox_info = None
 
-    dropbox_info
+    # Information about items on the local machine
+    # dict of info {
+    #   links : list of links[dict of link info {
+    #       local_path : string,
+    #       resource name : 
+    #       resource version : 
+    #   
+    local_info = None
 
     # Mapping of installed resources (resource path : {)
     resource_link_dict = None
@@ -45,8 +42,6 @@ class Core:
     
 
 
-
-
     """ ====== Functions ======== """
     """
     Constructor method
@@ -54,17 +49,9 @@ class Core:
      - script_args: arguments passed to the script
     """
     def __init__(self, config_fp):
-        config_obj = json.load(config_fp)
+        self._validate_dropbox_unbox(DROPBOX_DIRPATH, DROPBOX_UNBOX_DIRNAME)
+        self._validate_local_unbox(LOCAL_UNBOX_DIRPATH)
 
-        # Ensure valid resource directory was specified
-        self.remote_resource_dir_path = os.path.expanduser(os.path.normpath(config_obj["resources directory"]))
-
-        # Ensure valid unbox directory was specified
-        self.unbox_dir_path = os.path.expanduser(os.path.normpath(config_obj["unbox directory"]))
-        if not os.path.exists(self.unbox_dir_path):
-            os.makedirs(self.unbox_dir_path)
-        if os.path.exists(self.unbox_dir_path) and not os.path.isdir(self.unbox_dir_path):
-            raise Exception(self.unbox_dir_path + " exists but isn't a directory")
 
         # Load rules from files detailing what links should be made
         resource_link_dict_filepath = os.path.join(self.unbox_dir_path, self.LINK_FILENAME)
@@ -187,5 +174,6 @@ class Core:
         ignored_resources_file = open (ignored_resources_filepath, 'w')
         json.dump(self.ignored_resources, ignored_resources_file)
         ignored_resources_file.close()
+
 
         
