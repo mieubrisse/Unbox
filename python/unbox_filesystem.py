@@ -10,6 +10,11 @@ class Filesystem:
     # Constants for the local Unbox directory
     _local_unbox_dirpath = ""
     _LOCAL_INDEX_FILENAME = "index.json"
+    _UNBOXED_RESOURCES_DICT_KEY = "unboxed_resources"
+    _IGNORED_RESOURCES_LIST_KEY = "ignored_resources"
+    _UNBXD_RSRC_INFO_KEY_LINKPATH = "link_path"
+    _UNBXD_RSRC_INFO_KEY_LINKTARGET = "link_target"
+    _UNBXD_RSRC_INFO_KEY_VERSION = "version"
 
     # Constants for dealing with the backup system
     _BACKUP_DIRNAME = "backups"
@@ -18,7 +23,16 @@ class Filesystem:
     # Constants for the Dropbox Unbox directory
     _dropbox_unbox_dirpath = ""
     _DROPBOX_INDEX_FILENAME = "index.json"
-    _RESOURCE_INFO_KEY_PARENT_DIRNAME = "parent_directory"
+    _RSRC_INFO_KEY_PARENT_DIRNAME = "parent_directory"
+    _RSRC_INFO_KEY_VERSIONS = "versions"
+    _RSRC_INFO_KEY_CURRENT_VERSION = "current_version"
+    _CURRENT_RSRC_VERSION_LINKNAME = "current"
+
+    # Mapping resources on local machine -> resource types on the machine {
+    _local_index = {
+        _UNBOXED_RESOURCES_DICT_KEY : dict(),
+        _IGNORED_RESOURCES_LIST_KEY : list()
+    }
 
     # Mapping resources in backup -> directory in backup directory containing resource
     _backup_index = dict()
@@ -27,6 +41,7 @@ class Filesystem:
     #   versions : list of version numbers
     #   directory : name of directory where resource is stored
     _dropbox_index = dict()
+
 
 
     """
@@ -46,7 +61,6 @@ class Filesystem:
         if not os.path.isdir(dropbox_unbox_dirpath):
             try:
                 os.mkdir(dropbox_unbox_dirpath)
-                os.mkdir(os.path.join(dropbox_unbox_dirpath, self._BACKUP_DIRNAME))
             except OSError as e:
                 raise ValueError("Could not create Dropbox Unbox directory: " + str(e))
 
@@ -75,6 +89,13 @@ class Filesystem:
             self._dropbox_index = json.load(dropbox_index_fp)
             dropbox_index_fp.close()
 
+        # Read local index file
+        local_index_filepath = os.path.join(self._local_unbox_dirpath, self._LOCAL_INDEX_FILENAME)
+        if os.path.isfile(local_index_filepath):
+            dropbox_index_fp = open(dropbox_index_filepath, "r")
+            self._dropbox_index = json.load(dropbox_index_fp)
+            dropbox_index_fp.close()
+
 
     """
     Gets the user-expanded, normalized, absolute path to a file object
@@ -84,6 +105,9 @@ class Filesystem:
     @staticmethod
     def abs_path(path):
         return os.path.abspath(os.path.expanduser(os.path.normpath(path)))
+
+
+
 
 
     """ ==========  Dropbox Functions =========== """
@@ -101,15 +125,16 @@ class Filesystem:
     """
     def _dropbox_get_resource_path(self, resource):
         # Check validity
+        resource = os.path.normpath(resource)
         if not self._dropbox_exists(resource):
             raise ValueError("Could not get path to resource in Dropbox; resource does not exist")
 
         # Find resource and get absolute path
         resource_info = self._dropbox_index[resource]
-        stored_loc_dirname = resource_info[
-        
+        resource_parent_dirname = resource_info[self._RESOURCE_INFO_KEY_PARENT_DIRNAME]
 
-        os.path.join(self._dropbox_unbox_dirpath, 
+        resource_path = os.path.join(self._dropbox_unbox_dirpath, resource_parent_dirname, resource)
+        return resource_path
 
 
     """
@@ -117,23 +142,75 @@ class Filesystem:
     - path: path to resource to add
     - RETURN: true if the resource exists, false otherwise
     """
-    def _dropbox_add(self, path):
+    def dropbox_add(self, path, version=1.0):
         # Check validity
         path = Filesystem.abs_path(path)
         if not os.path.exists(path):
-            raise ValueError("Cannot add file to dropbox; file does not exist")
+            raise ValueError("Cannot add resource to dropbox; resource does not exist")
+        if not (os.path.isdir(path) or os.path.isfile(path)):
+            raise ValueError("Cannot add resource to dropbox; resource is not a file or directory")
 
-        # Hashes the resource's full path, creates a directory with the hash name, and places the resource inside
-        BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
-        upstream, basename = os.path.split(path)
-        dest_dir = str(uuid.uuid4())
-        dest_path = os.path.join(BACKUP_DIRPATH, dest_dir)
-        os.mkdir(dest_path)
-        shutil.move(path, dest_path)
+        # Creates directory structure to place resource in
+        upstream, resource_filename = os.path.split(path)
+        parent_dirname = str(uuid.uuid4())
+        parent_dirpath = os.path.join(self._dropbox_unbox_dirpath, parent_dirname)
+        os.mkdir(parent_dirpath)
+        version_dirpath = os.path.join(parent_dirpath, str(version))
+        os.mkdir(version_dirpath)
 
-        # Register the addition in the dropbox index
-        self._dropbox_index[path] = dest_dir
+        # Creates symlink to current version
+        current_version_linkpath = os.path.join(parent_dirpath, self._CURRENT_RSRC_VERSION_LINKNAME) 
+        os.symlink(version_dirpath, current_version_linkpath)
+
+        # Moves resource to proper spot
+        dest_dirpath = os.path.join(parent_dirpath, str(version))
+        shutil.move(path, dest_dirpath)
+
+        # Creates a link at the local path to the Dropbox resource
+        resource_filepath = os.path.join(dest_dirpath, resource_filename)
+        os.symlink(resource_filepath, path)
+
+        # Register the addition in the Dropbox index
+        resource_info = {
+            self._RSRC_INFO_KEY_PARENT_DIRNAME : parent_dirname, 
+            self._RSRC_INFO_KEY_VERSIONS : [version], 
+            self._RSRC_INFO_KEY_CURRENT_VERSION : version
+        }
+        self._dropbox_index[resource_filename] = resource_info
         self._write_dropbox_index()
+
+        # Register the addition in the local index
+        unboxed_resource_info = {
+            self._UNBXD_RSRC_INFO_KEY_LINKPATH : path,
+            self._UNBXD_RSRC_INFO_KEY_LINKTARGET : resource_filepath,
+            self._UNBXD_RSRC_INFO_KEY_VERSION : version
+        }
+        unboxed_resources_dict = self._local_index[self._UNBOXED_RESOURCES_DICT_KEY]
+        unboxed_resources_dict[resource_filename] = unboxed_resource_info
+        self._write_local_index()
+
+    """
+    Writes the in-memory Dropbox index to the Dropbox index file
+    """
+    def _write_dropbox_index(self):
+        DROPBOX_INDEX_FILEPATH = os.path.join(self._dropbox_unbox_dirpath, self._DROPBOX_INDEX_FILENAME)
+        dropbox_index_fp = open(DROPBOX_INDEX_FILEPATH, "w")
+        json.dump(self._dropbox_index, dropbox_index_fp, indent=4)
+        dropbox_index_fp.close()
+
+    """
+    Writes the in-memory local index to the local index file
+    """
+    def _write_local_index(self):
+        LOCAL_INDEX_FILEPATH = os.path.join(self._local_unbox_dirpath, self._LOCAL_INDEX_FILENAME)
+        local_index_fp = open(LOCAL_INDEX_FILEPATH, "w")
+        json.dump(self._local_index, local_index_fp, indent=4)
+        local_index_fp.close()
+
+
+
+
+
 
     """ ========== Validation Functions =========== """
     """
@@ -210,10 +287,10 @@ class Filesystem:
         # Restore backed-up resource into original location
         resource_filename = os.path.basename(path)
         BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
-        saved_loc_dirpath = os.path.join(BACKUP_DIRPATH, self._backup_index[path]) 
-        saved_loc_filepath = os.path.join(saved_loc_dirpath, resource_filename)
-        shutil.move(saved_loc_filepath, path)
-        os.rmdir(saved_loc_dirpath)
+        resource_parent_dirpath = os.path.join(BACKUP_DIRPATH, self._backup_index[path]) 
+        resource_parent_filepath = os.path.join(resource_parent_dirpath, resource_filename)
+        shutil.move(resource_parent_filepath, path)
+        os.rmdir(resource_parent_dirpath)
 
         # Register the removal in the backup index 
         del(self._backup_index[path])
@@ -233,13 +310,13 @@ class Filesystem:
         # Remove the resource and the directory holding it
         resource_filename = os.path.basename(path)
         BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
-        saved_loc_dirpath = os.path.join(BACKUP_DIRPATH, self._backup_index[path]) 
-        saved_loc_filepath = os.path.join(saved_loc_dirpath, resource_filename)
-        if os.path.isdir(saved_loc_filepath):
+        resource_parent_dirpath = os.path.join(BACKUP_DIRPATH, self._backup_index[path]) 
+        resource_parent_filepath = os.path.join(resource_parent_dirpath, resource_filename)
+        if os.path.isdir(resource_parent_filepath):
             shutil.rmtree(saved_local_filepath)
         else:
             os.remove(path)
-        os.rmdir(saved_loc_dirpath)
+        os.rmdir(resource_parent_dirpath)
 
         # Register the removal in the backup index 
         del(self._backup_index[path])
@@ -252,7 +329,7 @@ class Filesystem:
         BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
         BACKUP_INDEX_FILEPATH = os.path.join(BACKUP_DIRPATH, self._BACKUP_INDEX_FILENAME)
         backup_index_fp = open(BACKUP_INDEX_FILEPATH, "w")
-        json.dump(self._backup_index, backup_index_fp)
+        json.dump(self._backup_index, backup_index_fp, indent=4)
         backup_index_fp.close()
 
 
