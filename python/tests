@@ -1,0 +1,147 @@
+#!/usr/bin/python
+
+import unittest
+import os
+import shutil
+import logging
+import sys
+import dropbox_module
+
+"""
+Tests the Dropbox filesystem module
+"""
+class TestDropboxModule(unittest.TestCase):
+
+    _TEST_DIRNAME = "dropbox_module_test"
+    _TEST_DROPBOX_DIRNAME = "test_dropbox"
+    _TEST_DROPBOX_UNBOX_DIRNAME = "test_unbox"
+    _log = logging.getLogger("TestDropboxModule")
+
+    # Creates a test directory and a test Dropbox directory within that
+    def setUp(self):
+        os.mkdir(self._TEST_DIRNAME)
+        self._TEST_DROPBOX_PATH = os.path.join(self._TEST_DIRNAME, self._TEST_DROPBOX_DIRNAME)
+        os.mkdir(self._TEST_DROPBOX_PATH)
+
+    # Tests a clean initialization
+    def test_clean_init(self):
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+    # Tests an initialization with the Unbox directory already existing
+    def test_preexisting_unbox_init(self):
+        os.mkdir(os.path.join(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME))
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+    # Test init with an empty Unbox dirname
+    def test_bad_unbox_dirname_init(self):
+        self.assertRaises(ValueError, dropbox_module.DropboxModule, self._TEST_DROPBOX_PATH, "")
+        self.assertRaises(TypeError, dropbox_module.DropboxModule, self._TEST_DROPBOX_PATH, None)
+
+    # Test init with a bogus and empty Dropbox dirpath
+    def test_bad_dropbox_dirpath_init(self):
+        self.assertRaises(ValueError, dropbox_module.DropboxModule, "$@%@#!%", self._TEST_DROPBOX_UNBOX_DIRNAME)
+        self.assertRaises(ValueError, dropbox_module.DropboxModule, "", self._TEST_DROPBOX_UNBOX_DIRNAME)
+        self.assertRaises(TypeError, dropbox_module.DropboxModule, None, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+    # Adds two files normally, then adds a collision
+    def test_add_resources(self):
+        # Set up first file
+        TEST_FILENAME = "test.txt"
+        test_filepath = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_fp = open(test_filepath, "w")
+        test_fp.write("This is test text!")
+        test_fp.close()
+
+        # Set up second file
+        TEST2_FILENAME = "test.txt2"
+        test2_filepath = os.path.join(self._TEST_DIRNAME, TEST2_FILENAME)
+        test2_fp = open(test2_filepath, "w")
+        test2_fp.write("This is a different test text!")
+        test2_fp.close()
+
+        # Set up module
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+        test_module.add_resource(test_filepath)
+        test_module.add_resource(test2_filepath)
+
+        # Test files exist in memory
+        resource_set = test_module.resource_set()
+        self.assertTrue(TEST_FILENAME in resource_set)
+        self.assertTrue(TEST2_FILENAME in resource_set)
+
+        # Test files exist in OS
+        resource1_dirname, _, _ = test_module.resource_info(TEST_FILENAME)
+        resource2_dirname, _, _ = test_module.resource_info(TEST2_FILENAME)
+        resource1_dirpath = os.path.join(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME, resource1_dirname)
+        resource2_dirpath = os.path.join(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME, resource2_dirname)
+
+        self.assertTrue(os.path.isdir(resource1_dirpath))
+        self.assertTrue(os.path.isdir(resource2_dirpath))
+        self.assertTrue(os.path.exists(test_module.resource_path(TEST_FILENAME)))
+        self.assertTrue(os.path.exists(test_module.resource_path(TEST2_FILENAME)))
+
+        # Test a collision
+        self.assertRaises(ValueError, test_module.add_resource, TEST_FILENAME)
+
+    # Tests deletion of resources
+    def test_delete_resources(self):
+        # Set up environment
+        TEST_FILENAME = "test.txt"
+        test_filepath = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_fp = open(test_filepath, "w")
+        test_fp.write("This is test text!")
+        test_fp.close()
+
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+        test_module.add_resource(test_filepath)
+        resource_dirname, _, _ = test_module.resource_info(TEST_FILENAME)
+        resource_dirpath = os.path.join(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME, resource_dirname)
+
+        # Test valid deletion
+        test_module.delete_resource(TEST_FILENAME)
+        self.assertFalse(TEST_FILENAME in test_module.resource_set())
+        self.assertFalse(os.path.exists(resource_dirpath))
+
+        # Test deleting the same file again without re-adding it
+        self.assertRaises(ValueError, test_module.delete_resource, TEST_FILENAME)
+
+    # Tests that the resource versioning code works as expected
+    def test_normal_versioning(self):
+        # Set up environment
+        TEST_FILENAME = "test.txt"
+        TEST_FILEPATH = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_fp = open(TEST_FILEPATH, "w")
+        test_fp.write("This is test text!")
+        test_fp.close()
+
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+        # Add regular versioned file
+        TEST_VERSION = "2.3"
+        TEST_DEPENDENCIES = set(["dep1", "dep2"])
+        test_module.add_resource(TEST_FILEPATH, version=TEST_VERSION, dependencies=list(TEST_DEPENDENCIES))
+        _, current_version, _ = test_module.resource_info(TEST_FILENAME)
+        dependencies = set(test_module.resource_version_info(TEST_FILENAME, TEST_VERSION))
+        self.assertTrue(dependencies == TEST_DEPENDENCIES)
+        self.assertEqual(TEST_VERSION, current_version)
+
+
+    # Attempts to add a nonexistent file and an empty path to Dropbox
+    def test_add_invalid_resource(self):
+        # Set up environment
+        TEST_FILENAME = "test.txt"
+        test_filepath = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+        self.assertRaises(ValueError, test_module.add_resource, test_filepath)
+        self.assertRaises(ValueError, test_module.add_resource, "")
+
+    # Removes the test directories that were created
+    def tearDown(self):
+        shutil.rmtree(self._TEST_DIRNAME)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(stream = sys.stderr)
+    logging.getLogger("TestDropboxModule").setLevel(logging.DEBUG)
+    unittest.main(verbosity=2)
