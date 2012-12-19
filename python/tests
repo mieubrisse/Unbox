@@ -105,6 +105,16 @@ class TestDropboxModule(unittest.TestCase):
         # Test deleting the same file again without re-adding it
         self.assertRaises(ValueError, test_module.delete_resource, TEST_FILENAME)
 
+    # Attempts to add a nonexistent file and an empty path to Dropbox
+    def test_add_invalid_resource(self):
+        # Set up environment
+        TEST_FILENAME = "test.txt"
+        test_filepath = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+
+        self.assertRaises(ValueError, test_module.add_resource, test_filepath)
+        self.assertRaises(ValueError, test_module.add_resource, "")
+
     # Tests that the resource versioning code works as expected
     def test_normal_versioning(self):
         # Set up environment
@@ -119,22 +129,48 @@ class TestDropboxModule(unittest.TestCase):
         # Add regular versioned file
         TEST_VERSION = "2.3"
         TEST_DEPENDENCIES = set(["dep1", "dep2"])
-        test_module.add_resource(TEST_FILEPATH, version=TEST_VERSION, dependencies=list(TEST_DEPENDENCIES))
+        test_module.add_resource(TEST_FILEPATH, version=TEST_VERSION, dependencies=TEST_DEPENDENCIES)
         _, current_version, _ = test_module.resource_info(TEST_FILENAME)
-        dependencies = set(test_module.resource_version_info(TEST_FILENAME, TEST_VERSION))
+        dependencies = set(test_module.version_info(TEST_FILENAME, TEST_VERSION))
         self.assertTrue(dependencies == TEST_DEPENDENCIES)
         self.assertEqual(TEST_VERSION, current_version)
 
+        # Test copying of versions
+        COPY_VERSION = "2.5"
+        test_module.copy_version(TEST_FILENAME, TEST_VERSION, COPY_VERSION, copy_dependencies=True)
+        old_version_info = test_module.version_info(TEST_FILENAME, TEST_VERSION)
+        new_version_info = test_module.version_info(TEST_FILENAME, COPY_VERSION)
+        self.assertEquals(len(old_version_info - new_version_info), 0)
 
-    # Attempts to add a nonexistent file and an empty path to Dropbox
-    def test_add_invalid_resource(self):
+        # Test changing 'current' pointer and deleting objects
+        test_module.change_current_version(TEST_FILENAME, TEST_VERSION)
+        self.assertRaises(ValueError, test_module.delete_version, TEST_FILENAME, TEST_VERSION)
+        test_module.delete_version(TEST_FILENAME, COPY_VERSION)
+        self.assertRaises(ValueError, test_module.change_current_version, TEST_FILENAME, COPY_VERSION)
+
+    # Adds and removes depedencies from a version
+    def test_version_dependencies(self):
         # Set up environment
         TEST_FILENAME = "test.txt"
-        test_filepath = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
-        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+        TEST_FILEPATH = os.path.join(self._TEST_DIRNAME, TEST_FILENAME)
+        test_fp = open(TEST_FILEPATH, "w")
+        test_fp.write("This is test text!")
+        test_fp.close()
 
-        self.assertRaises(ValueError, test_module.add_resource, test_filepath)
-        self.assertRaises(ValueError, test_module.add_resource, "")
+        test_module = dropbox_module.DropboxModule(self._TEST_DROPBOX_PATH, self._TEST_DROPBOX_UNBOX_DIRNAME)
+        TEST_VERSION = "2.3"
+        test_module.add_resource(TEST_FILEPATH, version=TEST_VERSION)
+
+        # Test adding and removing dependencies
+        TEST_DEPENDENCY = "foo"
+        test_module.add_version_dependency(TEST_FILENAME, TEST_VERSION, TEST_DEPENDENCY)
+        dependencies = test_module.version_info(TEST_FILENAME, TEST_VERSION)
+        self.assertTrue(TEST_DEPENDENCY in dependencies)
+        self.assertRaises(ValueError, test_module.add_version_dependency, TEST_FILENAME, TEST_VERSION, "")
+        test_module.delete_version_dependency(TEST_FILENAME, TEST_VERSION, TEST_DEPENDENCY)
+        dependencies = test_module.version_info(TEST_FILENAME, TEST_VERSION)
+        self.assertTrue(TEST_DEPENDENCY not in dependencies)
+        self.assertRaises(ValueError, test_module.delete_version_dependency, TEST_FILENAME, TEST_VERSION, "")
 
     # Removes the test directories that were created
     def tearDown(self):

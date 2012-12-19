@@ -1,6 +1,6 @@
 import os
 import shutil
-import json
+import pickle
 import uuid
 import unbox_filesystem
 
@@ -10,7 +10,7 @@ Module for the Unbox filesystem to handle Dropbox-related commands
 class DropboxModule:
 
     # Constants
-    _INDEX_FILENAME = "index.json"
+    _INDEX_FILENAME = "index"
     _RSRC_INFO_KEY_PARENT_DIRNAME = "parent_dirname"
     _RSRC_INFO_KEY_VERSIONS_INFO = "versions_info"
     _RSRC_INFO_KEY_CURRENT_VERSION = "current_version"
@@ -49,7 +49,7 @@ class DropboxModule:
         dropbox_index_filepath = os.path.join(self._unbox_dirpath, self._INDEX_FILENAME)
         if os.path.isfile(dropbox_index_filepath):
             dropbox_index_fp = open(dropbox_index_filepath, "r")
-            self._dropbox_index = json.load(dropbox_index_fp)
+            self._dropbox_index = pickle.load(dropbox_index_fp)
             dropbox_index_fp.close()
         else:
             self._dropbox_index = dict()
@@ -69,7 +69,7 @@ class DropboxModule:
     def _write_index(self):
         INDEX_FILEPATH = os.path.join(self._unbox_dirpath, self._INDEX_FILENAME)
         dropbox_index_fp = open(INDEX_FILEPATH, "w")
-        json.dump(self._dropbox_index, dropbox_index_fp, indent=4)
+        pickle.dump(self._dropbox_index, dropbox_index_fp)
         dropbox_index_fp.close()
 
     """
@@ -86,7 +86,7 @@ class DropboxModule:
     - version: version to check for
     - RETURN: true if the version exists, false otherwise
     """
-    def resource_version_exists(self, resource_name, version):
+    def version_exists(self, resource_name, version):
         # Ensure validity
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot check if resource version exists; cannot find resource")
@@ -109,7 +109,7 @@ class DropboxModule:
     Gets the dictionary entry for the given resource
     - resource_name: name of resource in Dropbox
     - RETURN: tuple of (resource dirname, current version number, set of version names)
-    NOTE: To get version info, use resource_version_info
+    NOTE: To get version info, use version_info
     """
     def resource_info(self, resource_name):
         # Sanity check
@@ -141,13 +141,12 @@ class DropboxModule:
         return resource_path
 
     """
-    Adds the given resource to the Dropbox system
+    Copies the given resource into the Dropbox system
     - path: path to resource to add
-    - RETURN: true if the resource exists, false otherwise
     """
     def add_resource(self, local_path, version="1.0", dependencies=None):
         if dependencies == None:
-            dependencies = list()
+            dependencies = set()
 
         # Sanity checks
         if local_path == None:
@@ -164,7 +163,7 @@ class DropboxModule:
             raise ValueError("Cannot have empty version name")
         veresion = version.strip()
 
-        # Creates directory structure to place resource in
+        # Creates directory structure to copy resource to
         upstream, resource_filename = os.path.split(local_path)
         parent_dirname = str(uuid.uuid4())
         parent_dirpath = os.path.join(self._unbox_dirpath, parent_dirname)
@@ -195,25 +194,6 @@ class DropboxModule:
         self._dropbox_index[resource_filename] = resource_info
         self._write_index()
 
-#       THIS MIGHT COME IN HANDY LATER
-# 
-#         shutil.move(path, dest_dirpath)
-# 
-#         # Creates a link at the local path to the Dropbox resource
-#         resource_filepath = os.path.join(dest_dirpath, resource_filename)
-#         os.symlink(resource_filepath, path)
-# 
-# 
-#         # Register the addition in the local index
-#         unboxed_resource_info = {
-#             self._UNBXD_RSRC_INFO_KEY_LINKPATH : path,
-#             self._UNBXD_RSRC_INFO_KEY_LINKTARGET : resource_filepath,
-#             self._UNBXD_RSRC_INFO_KEY_VERSION : version
-#         }
-#         unboxed_resources_dict = self._local_index[self._UNBOXED_RESOURCES_DICT_KEY]
-#         unboxed_resources_dict[resource_filename] = unboxed_resource_info
-#         self._write_local_index()
-
     """
     Deletes a resource and all its versions from the Dropbox Unbox filesystem
     - resource: name of resource to delete
@@ -237,13 +217,13 @@ class DropboxModule:
     Gets information about a resource version
     - resource_name: name of resource to get info about
     - version: version to get info about
-    - RETURN: version dependencies
+    - RETURN: set of version dependencies
     """
-    def resource_version_info(self, resource_name, version):
+    def version_info(self, resource_name, version):
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot get resource version info; cannot find resource")
-        if not self.resource_version_exists(resource_name, version):
+        if not self.version_exists(resource_name, version):
             raise ValueError("Cannot get resource version info; cannot find version")
 
         # Extract version info
@@ -261,33 +241,37 @@ class DropboxModule:
     """
     def copy_version(self, resource_name, source_version, new_version, copy_dependencies=True):
         # Sanity checks
-        if new_version == None or len(new_version.strip() == 0):
+        if new_version == None or len(new_version.strip()) == 0:
             raise ValueError("Cannot add resource version; cannot add empty version name")
         new_version = new_version.strip()
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot add resource version; cannot find resource")
-        if not self.resource_version_exists(resource_name, source_version):
+        if not self.version_exists(resource_name, source_version):
             raise ValueError("Cannot add resource version; cannot find source version")
 
         # Create files for new version
         resource_info = self._dropbox_index[resource_name]
         resource_dirname = resource_info[self._RSRC_INFO_KEY_PARENT_DIRNAME]
-        new_version_filepath = os.path.join(self._unbox_dirpath, new_version, resource_name)
+        new_version_dirpath = os.path.join(self._unbox_dirpath, resource_dirname, new_version)
         os.mkdir(new_version_dirpath)
+        new_version_filepath = os.path.join(new_version_dirpath, resource_name)
         if source_version == self._CURRENT_RSRC_VERSION_LINKNAME:
             source_version_filepath = os.path.join(self._unbox_dirpath, resource_dirname, self._CURRENT_RSRC_VERSION_LINKNAME)
         else:
             source_version_filepath = os.path.join(self._unbox_dirpath, resource_dirname, source_version, resource_name)
-        shutil.copytree(source_version_filepath, new_version_filepath)
+        if os.path.isdir(source_version_filepath):
+            shutil.copytree(source_version_filepath, new_version_dirpath)
+        else:
+            shutil.copy(source_version_filepath, new_version_dirpath)
 
         # Update in-memory copy
         resource_versions_info = resource_info[self._RSRC_INFO_KEY_VERSIONS_INFO]
         source_version_info = resource_versions_info[source_version]
         new_version_info = dict()
         if copy_dependencies == True:
-            new_version_info[self._VERSION_INFO_KEY_DEPENDENCIES] = list(source_version_info[self._VERSION_INFO_KEY_DEPENDENCIES])
+            new_version_info[self._VERSION_INFO_KEY_DEPENDENCIES] = set(source_version_info[self._VERSION_INFO_KEY_DEPENDENCIES])
         else:
-            new_version_info[self._VERSION_INFO_KEY_DEPENDENCIES] = list()
+            new_version_info[self._VERSION_INFO_KEY_DEPENDENCIES] = set()
         resource_versions_info[new_version] = new_version_info
 
         self._write_index()
@@ -302,7 +286,7 @@ class DropboxModule:
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot add version dependency; cannot find resource")
-        if not self.resource_version_exists(resource_name, version_name):
+        if not self.version_exists(resource_name, version_name):
             raise ValueError("Cannot add version dependency; cannot find resource version")
         if dependency_name == None or len(dependency_name.strip()) == 0:
             raise ValueError("Cannot add version dependency; dependency name must be non-empty string")
@@ -311,7 +295,7 @@ class DropboxModule:
         versions_info = self._dropbox_index[resource_name][self._RSRC_INFO_KEY_VERSIONS_INFO]
         version_dependencies = versions_info[version_name][self._VERSION_INFO_KEY_DEPENDENCIES]
         if dependency_name not in version_dependencies:
-            version_dependencies.append(dependency_name)
+            version_dependencies.add(dependency_name)
             self._write_index()
 
     """
@@ -319,25 +303,21 @@ class DropboxModule:
     - resource_name: name of resource to modify version for
     - version_name: name of version to delete dependency from
     - dependency: dependency to delete
-    - RETURN: true if the dependency existed, false otherwise
     """
     def delete_version_dependency(self, resource_name, version_name, dependency_name):
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot add version dependency; cannot find resource")
-        if not self.resource_version_exists(resource_name, version_name):
+        if not self.version_exists(resource_name, version_name):
             raise ValueError("Cannot add version dependency; cannot find resource version")
         if dependency_name == None or len(dependency_name.strip()) == 0:
             raise ValueError("Cannot add version dependency; dependency name must be non-empty string")
 
-        # Add version dependency to in-memory list and write to file
+        # Remove version dependency from in-memory list and write to file
         versions_info = self._dropbox_index[resource_name][self._RSRC_INFO_KEY_VERSIONS_INFO]
-        version_dependencies = set(versions_info[version_name][self._VERSION_INFO_KEY_DEPENDENCIES])
-        if dependency_name in version_dependencies:
-            version_dependencies.remove(dependency_name)
-            self._write_index()
-            return True
-        return False
+        version_dependencies = versions_info[version_name][self._VERSION_INFO_KEY_DEPENDENCIES]
+        version_dependencies.discard(dependency_name)
+        self._write_index()
 
     """
     Changes the current version of a Dropbox resource
@@ -348,11 +328,12 @@ class DropboxModule:
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot change resource version; cannot find resource")
-        if not self.resource_version_exists(resource_name, version):
+        if not self.version_exists(resource_name, version):
             raise ValueError("Cannot change resource version; cannot find version")
 
         # Perform version change and write changes to file
-        resource_dirpath = os.path.join(self._unbox_dirpath, self._dropbox_index[self._RSRC_INFO_KEY_PARENT_DIRNAME])
+        resource_dirname = self._dropbox_index[resource_name][self._RSRC_INFO_KEY_PARENT_DIRNAME]
+        resource_dirpath = os.path.join(self._unbox_dirpath, resource_dirname)
         current_rsrc_version_linkpath = os.path.join(
                 resource_dirpath,
                 self._CURRENT_RSRC_VERSION_LINKNAME)
@@ -370,11 +351,11 @@ class DropboxModule:
     - resource_name: name of resource to change version for
     - version: version to point resource to
     """
-    def delete_resource_version(self, resource_name, version):
+    def delete_version(self, resource_name, version):
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot delete resource version; cannot find resource")
-        if not self.resource_version_exists(resource_name, version):
+        if not self.version_exists(resource_name, version):
             raise ValueError("Cannot delete resource version; cannot find version")
         resource_info = self._dropbox_index[resource_name]
         resource_versions = resource_info[self._RSRC_INFO_KEY_VERSIONS_INFO]
@@ -386,7 +367,7 @@ class DropboxModule:
         # Delete data associated with version and write changes to file
         version_dirpath = os.path.join(
                 self._unbox_dirpath,
-                self._dropbox_index[self._RSRC_INFO_KEY_PARENT_DIRNAME],
+                self._dropbox_index[resource_name][self._RSRC_INFO_KEY_PARENT_DIRNAME],
                 version)
         shutil.rmtree(version_dirpath)
         del(resource_versions[version])
