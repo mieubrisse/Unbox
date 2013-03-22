@@ -4,17 +4,17 @@ import json
 import uuid
 import unbox_filesystem
 
-"""
-Module for the Unbox filesystem to handle local Unbox directory-related commands
-"""
 class LocalModule:
-    """ ========== Consants =========== """
+    """Module for the Unbox filesystem to handle local Unbox directory-related commands"""
+
+    """ ========== Constants =========== """
     # Constants for the local Unbox directory
     _INDEX_FILENAME = "index.json"
     _UNBOXED_RESOURCES_DICT_KEY = "unboxed_resources"
     _IGNORED_RESOURCES_LIST_KEY = "ignored_resources"
     _UNBXD_RSRC_INFO_KEY_LINKPATH = "link_path"
     _UNBXD_RSRC_INFO_KEY_LINKTARGET = "link_target"
+    _UNBXD_RSRC_INFO_KEY_NAME = "name"
     _UNBXD_RSRC_INFO_KEY_VERSION = "version"
 
     # Constants for dealing with the backup system
@@ -38,11 +38,15 @@ class LocalModule:
 
 
 
-    """
-    Instantiates a new module to manage the local Unbox directory
-    - local_unbox_dirpath: path to the local Unbox directory
-    """
+    """ ========== Functions =========== """
     def __init__(self, local_unbox_dirpath):
+        """Instantiates a new module to manage the local Unbox directory
+
+        Keyword Args:
+        local_unbox_dirpath -- path to the local Unbox directory
+
+        Returns: a new manager for the local unbox filesystem
+        """
         local_unbox_dirpath = unbox_filesystem.abs_path(local_unbox_dirpath)
 
         # Test if local Unbox directory exists and create if not
@@ -71,62 +75,78 @@ class LocalModule:
 
 
 
-
     """ ========== Validation Functions =========== """
-    """
-    Ensures the given local Unbox directory has all the necessary directories
-    - path: path to local Unbox directory
-    """
     def _is_valid_local_dir(self, path):
+        """Ensures the given local Unbox directory has all the necessary directories
+
+        Keyword Args:
+        path -- path to local Unbox directory
+        """
         backup_dir = os.path.join(path, self._BACKUP_DIRNAME)
         return os.path.isdir(path) and os.path.isdir(backup_dir)
 
-    """
-    Creates the elements of a local Unbox directory
-    - path: path to Unbox directory
-    """
     def _make_local_dir(self, path):
+        """Creates the elements of a local Unbox directory
+
+        Keyword Args:
+        path -- path to Unbox directory
+        """
         if not os.path.isdir(path):
             os.mkdir(path)
         backup_dir = os.path.join(path, self._BACKUP_DIRNAME)
         if not os.path.isdir(backup_dir):
             os.mkdir(backup_dir)
 
-
     """ ========== Non-Backup Functions =========== """
-    """
-    Writes the in-memory local index to the local index file
-    """
     def _write_local_index(self):
+        """Writes the in-memory local index to the local index file"""
         INDEX_FILEPATH = os.path.join(self._local_unbox_dirpath, self._INDEX_FILENAME)
         local_index_fp = open(INDEX_FILEPATH, "w")
         json.dump(self._local_index, local_index_fp, indent=4)
         local_index_fp.close()
 
+    def local_add(self, local_path, dropbox_path):
+        """Adds the given Dropbox resource to the local filesystem at the given location
+
+        Keyword Args:
+        local_path -- local path to place the resource at
+        dropbox_path -- path to resource in Dropbox
+        """
+        # Validate input
+        if not os.path.exists(local_path):
+            ValueError("Local_path must exist")
+        if not os.path.exists(dropbox_path):
+            ValueError("Dropbox_path must exist")
+
+        # TODO Add resource to local index
 
 
 
 
     """ ========== Backup Functions =========== """
-    """
-    Checks if the given resource is stored in the backup system
-    - path: local path to resource
-    - RETURN: true if the resource is already saved, false otherwise
-    """
     def backup_exists(self, path):
+        """Checks if the given resource is stored in the backup system
+
+        Keyword Args:
+        path -- local path to resource
+
+        Return: true if the resource is already saved, false otherwise
+        """
         return (path in self._backup_index.keys())
 
-    """
-    Gets the list of backed-up files
-    """
     def backup_list(self):
+        """Gets the list of backed-up files
+
+        Return: set of backed-up files
+        """
         return self._backup_index.keys()
 
-    """
-    Moves the given file/directory tree into the backup system
-    - path: local path to the file 
-    """
     def backup_add(self, path):
+        """Moves the given file/directory tree into the backup system
+
+        Keyword Args:
+        path -- local path to the file 
+        """
         # Check validity
         path = unbox_filesystem.abs_path(path)
         if not os.path.exists(path):
@@ -146,11 +166,12 @@ class LocalModule:
         self._backup_index[path] = dest_dir
         self._write_backup_index()
 
-    """
-    Retrieves the file/diretory tree from the backup system
-    - path: local path to retrieve
-    """
     def backup_restore(self, path):
+        """Retrieves the resource from the backup system to its prior spot
+
+        Keyword Args:
+        path -- local path to retrieve
+        """
         # Check validity
         path = unbox_filesystem.abs_path(path)
         if not self.backup_exists(path):
@@ -168,11 +189,12 @@ class LocalModule:
         del(self._backup_index[path])
         self._write_backup_index()
 
-    """
-    Deletes a resource in the backup system
-    - path: local path to resource
-    """
     def backup_delete(self, path):
+        """Deletes a resource in the backup system
+
+        Keyword Args:
+        path -- local path to resource
+        """
         # Check validity
         path = unbox_filesystem.abs_path(path)
         if not self.backup_exists(path):
@@ -194,10 +216,8 @@ class LocalModule:
         del(self._backup_index[path])
         self._write_backup_index()
 
-    """
-    Writes the in-memory backup index to the backup index file
-    """
     def _write_backup_index(self):
+        """Writes the in-memory backup index to the backup index file"""
         BACKUP_DIRPATH = os.path.join(self._local_unbox_dirpath, self._BACKUP_DIRNAME)
         BACKUP_INDEX_FILEPATH = os.path.join(BACKUP_DIRPATH, self._BACKUP_INDEX_FILENAME)
         backup_index_fp = open(BACKUP_INDEX_FILEPATH, "w")
