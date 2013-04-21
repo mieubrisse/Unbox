@@ -19,12 +19,12 @@ class DropboxModule:
 
 
 
+    """
+    Instantiates a new Dropbox filesystem module at the given location
+    - dropbox_dirpath: path to the user's Dropbox directory
+    - unbox_dirname: name of Unbox directory in Dropbox folder
+    """
     def __init__(self, dropbox_dirpath, unbox_dirname):
-        """
-        Instantiates a new Dropbox filesystem module at the given location
-        - dropbox_dirpath: path to the user's Dropbox directory
-        - unbox_dirname: name of Unbox directory in Dropbox folder
-        """
         # Ensure argument validity
         if dropbox_dirpath == None or unbox_dirname == None:
             raise TypeError("Cannot use 'None' type")
@@ -63,29 +63,30 @@ class DropboxModule:
 
 
     """ ======= Helper Methods ======= """
+    """
+    Writes the in-memory Dropbox index to the Dropbox index file
+    """
     def _write_index(self):
-        """Writes the in-memory Dropbox index to the Dropbox index file"""
         INDEX_FILEPATH = os.path.join(self._unbox_dirpath, self._INDEX_FILENAME)
         dropbox_index_fp = open(INDEX_FILEPATH, "w")
         pickle.dump(self._dropbox_index, dropbox_index_fp)
         dropbox_index_fp.close()
 
+    """
+    Checks if a resource is in the Dropbox Unbox system
+    - resource: name of resource to check for
+    - RETURN: true if the resource exists, false otherwise
+    """
     def resource_exists(self, resource):
-        """Checks if a resource is in the Dropbox Unbox system
-
-        Keyword Args:
-        resource -- name of resource to check for
-        - RETURN: true if the resource exists, false otherwise
-        """
         return resource in self._dropbox_index
 
+    """
+    Sanity check function to ensure a version exists for a resource
+    - resource: resource to check for version
+    - version: version to check for
+    - RETURN: true if the version exists, false otherwise
+    """
     def version_exists(self, resource_name, version):
-        """
-        Sanity check function to ensure a version exists for a resource
-        - resource: resource to check for version
-        - version: version to check for
-        - RETURN: true if the version exists, false otherwise
-        """
         # Ensure validity
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot check if resource version exists; cannot find resource")
@@ -97,20 +98,20 @@ class DropboxModule:
 
 
     """ ======= Resource Methods ======= """
-    def resource_names(self):
-        """
-        Gets resources stored in Dropbox
-        - RETURN: set of names of resources in Dropbox
-        """
+    """
+    Gets resources stored in Dropbox
+    - RETURN: set of names of resources in Dropbox
+    """
+    def resource_set(self):
         return self._dropbox_index.keys()
 
+    """
+    Gets the dictionary entry for the given resource
+    - resource_name: name of resource in Dropbox
+    - RETURN: tuple of (resource dirname, current version number, set of version names)
+    NOTE: To get version info, use version_info
+    """
     def resource_info(self, resource_name):
-        """
-        Gets the dictionary entry for the given resource
-        - resource_name: name of resource in Dropbox
-        - RETURN: tuple of (resource dirname, current version number, set of version names)
-        NOTE: To get version info, use version_info
-        """
         # Sanity check
         if not self.resource_exists(resource_name):
             raise ValueError("Cannot get resource info; resource does not exist")
@@ -122,11 +123,11 @@ class DropboxModule:
                 resource_info[self._RSRC_INFO_KEY_VERSIONS_INFO].keys()
             )
 
+    """
+    Gets the absolute path to a resource in the Dropbox Unbox system
+    - resource: name of resource
+    """
     def resource_path(self, resource):
-        """
-        Gets the absolute path to a resource in the Dropbox Unbox system
-        - resource: name of resource
-        """
         # Check validity
         if not self.resource_exists(resource):
             raise ValueError("Could not get path to resource in Dropbox; resource does not exist")
@@ -139,11 +140,11 @@ class DropboxModule:
         resource_path = os.path.join(self._unbox_dirpath, resource_parent_dirname, current_version, resource)
         return resource_path
 
+    """
+    Copies the given resource into the Dropbox system
+    - path: path to resource to add
+    """
     def add_resource(self, local_path, version="1.0", dependencies=None):
-        """
-        Copies the given resource into the Dropbox system
-        - path: path to resource to add
-        """
         if dependencies == None:
             dependencies = set()
 

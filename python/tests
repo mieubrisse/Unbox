@@ -65,7 +65,7 @@ class TestDropboxModule(unittest.TestCase):
         test_module.add_resource(test2_filepath)
 
         # Test files exist in memory
-        resource_set = test_module.resource_names()
+        resource_set = test_module.resource_set()
         self.assertTrue(TEST_FILENAME in resource_set)
         self.assertTrue(TEST2_FILENAME in resource_set)
 
@@ -99,7 +99,7 @@ class TestDropboxModule(unittest.TestCase):
 
         # Test valid deletion
         test_module.delete_resource(TEST_FILENAME)
-        self.assertFalse(TEST_FILENAME in test_module.resource_names())
+        self.assertFalse(TEST_FILENAME in test_module.resource_set())
         self.assertFalse(os.path.exists(resource_dirpath))
 
         # Test deleting the same file again without re-adding it
