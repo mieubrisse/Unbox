@@ -1,6 +1,0 @@
- - Determine/let user set what custom packages a config file might need and install the package
-    - On trying to install to a file with more dependencies, warn user or give option to install
-    - Packages should be through dpkg?
- - Versioned files; especially useful for versions that require more file arguments
- - Try and guess where files should go. Give user option to override guess in Dropbox file
- - Keep index file in Dropbox folder of information about resources inside
